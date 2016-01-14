@@ -1,0 +1,111 @@
+<#
+    Script Name - DISABLE_STAFF_AD&GOOGLE_SCRIPT-01132016.ps1
+    Created By - Eric Mesa
+    Date - 1/13/2016
+    Contact - emesa@cedarburg.k12.wi.us
+    Version - 1.3
+    Description/Summary - 
+    
+    The following script will Find the AD User that is entered, Disable the AD account, Move Account to DisableUsers OU, 
+    Rename the home directory, Suspend the Google Apps account associated with AD account, and check for any synchronized Mobile Devices.
+
+    GAFE accounts should be wiped from device for data security reasons after employee has departed.
+
+    Enter AD Username when prompted
+
+    Note: This is for Staff AD Users only 
+                         
+
+    ///////////////////////////////////
+
+    Additional Information:
+    # Requires Powershell Version - n/a
+    # Specific Modules - n/a
+    # Future improvements of script - Extract the mobile ID from the gam print query and add it as a variable to auto wipe account from synchronized devices.
+    #                               - Look at Running powershell Remove-Item command to delete $CSDusername+mobiledevice.csv file when complete.
+    # Known Errors - 
+
+#>
+# Prompt for username
+
+                    $CSDusername = read-host -prompt "This will disable AD and Google accounts and account wipe synchronized mobile devices. Enter Username here -->"
+ 
+# Disable ADUser account
+
+                    Disable-ADAccount -Identity $CSDusername
+
+# Move ADUser to Disabled Users OU
+
+                    Get-ADUser $CSDusername | Move-ADObject -TargetPath 'OU=Disabled-Users,DC=school,DC=k12,DC=wi,DC=us' -Confirm
+
+# Output AD User home directory path to a variable to be used in rename process
+
+                    $hdir = Get-ADUser $CSDusername -Properties homedirectory| Select -ExpandProperty Homedirectory
+
+# Home Directory properties have been output to a variable in order to obtain only the UNC path of the user home directory
+
+                    Get-Variable -Name hdir -ValueOnly
+
+# Rename AD User home directory with old- prefix
+
+                    Rename-Item $hdir -NewName ("old-"+$CSDusername) -Confirm
+
+# Use the same useraccount name to suspend Google Account using Google Apps Manager
+# CD to gam utility on IT network shared drive and run from here.
+# GAM Results may show a generic message in Powershell, this is due to it being a CMD Exe tool.
+
+# Change to GAM directory   
+
+                    S:
+                    cd /
+                    cd Path\To\Your\Applications\gam
+
+# Run command to Suspend Google account
+
+                    cmd.exe /c "gam.exe update user $CSDusername suspended on" 
+
+# Check for Mobile Device associated to a Google Account.Export CSV file to gam directory.
+
+                    cmd.exe /c "gam.exe print mobile query "email:$CSDusername@school.k12.wi.us" > s:\Path\To\Your\Applications\gam\"$CSDusername+mobiledevice.csv""
+                    cmd.exe /c "gam.exe print mobile query "email:$CSDusername@school.k12.wi.us""
+
+# Import CSV to extract <resourceId>
+
+          $IDcsv = Import-Csv s:\Path\To\Your\Applications\gam\"$CSDusername+mobiledevice.csv" 
+                  
+          foreach ($item in $IDcsv) {
+                    $device = $item.resourceId
+                    $model = $item.model
+
+                    Write-Host 'To wipe'$CSDusername' CSD Account from synchronized devices please press ENTER now!'
+                    pause
+                    Write-Host 'gam.exe update mobile '$device' action account_wipe'
+                    Write-Host 'wiping'$CSDusername' Account from '$model' device'
+                    Write-Host ''
+
+ <#cd to gam utility on IT netowrk shared drive and run from here.
+
+                    #S:
+                    #cd /
+                    #cd Path\To\Your\Applications\gam
+#>
+
+ # Command to wipe account from all mobile devices with username entered from the csv file
+         
+                    cmd.exe /c  "gam.exe update mobile $($item.resourceId) action account_wipe"     
+ }
+    pause
+
+
+# Look at Running powershell command to delete $CSDusername+mobiledevice.csv file when complete. The following command has not been tested yet. Documentation only.
+    
+                   # Remove-Item .\"$CSDusername+mobiledevice.csv"
+
+
+
+# Show Popup message
+                   $wshell = New-Object -ComObject Wscript.Shell
+
+                   $wshell.Popup("Accounts Disabled and Wiped from Devices",0,"Done",0x1)
+
+
